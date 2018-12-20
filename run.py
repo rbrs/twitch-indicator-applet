@@ -64,11 +64,22 @@ class Twitch:
             self.status = stream['channel']['status']
           except KeyError:
             self.status = ""
-          
+
+          # Show default if channel owner has not set his avatar
+          if (stream['channel']['logo'] == None):
+            self.response = urllib.urlopen("http://static-cdn.jtvnw.net/jtv_user_pictures/xarth/404_user_150x150.png")
+          else:
+            self.response = urllib.urlopen(stream['channel']['logo'])
+          self.loader = GdkPixbuf.PixbufLoader.new()
+          self.loader.write(self.response.read())
+          self.loader.close()
+
           st = {
             'name': stream['channel']['display_name'],
+            'game': stream['channel']['game'],
             'status': self.status,
             'image': stream['channel']['logo'],
+            'pixbuf': self.loader,
             'url': "http://www.twitch.tv/%s" % stream['channel']['name']
           }
 
@@ -84,14 +95,8 @@ class Indicator():
   def __init__(self):
     self.timeout_thread = None
 
-    # Setup applet icon depending on DE
-    self.desktop_env = os.environ.get('DESKTOP_SESSION')
-    if self.desktop_env == "pantheon":
-      self.applet_icon = "twitch-elementary"
-    elif self.desktop_env == "mate":
-      self.applet_icon = "twitch-mate"
-    else:
-      self.applet_icon = "twitch-ubuntu"
+    # Setup applet icon
+    self.applet_icon = "twitch"
 
     # Create applet
     self.a = appindicator.Indicator.new(
@@ -199,7 +204,11 @@ class Indicator():
     self.streams_ordered = sorted(streams, key=lambda k: k["name"].lower())
     
     for index, stream in enumerate(self.streams_ordered):
-      self.streams_menu.append(gtk.MenuItem(stream["name"]))
+      self.icon=gtk.Image();
+      self.icon.set_from_pixbuf(stream['pixbuf'].get_pixbuf())
+      self.menu_entry = gtk.ImageMenuItem(stream['name']+' - '+stream['game'])
+      self.menu_entry.set_image(self.icon)
+      self.streams_menu.append(self.menu_entry)
       self.streams_menu.get_children()[index].connect('activate', self.open_link, stream["url"])
     
     for i in self.streams_menu.get_children():
@@ -299,23 +308,13 @@ class Indicator():
     """Pushes notifications of every stream, passed as a list of dictionaries."""
     try:
       for stream in streams:
-        self.image = gtk.Image()
-        # Show default if channel owner has not set his avatar
-        if (stream["image"] == None):
-          self.response = urllib.urlopen("http://static-cdn.jtvnw.net/jtv_user_pictures/xarth/404_user_150x150.png")
-        else:
-          self.response = urllib.urlopen(stream["image"])
-        self.loader = GdkPixbuf.PixbufLoader.new()
-        self.loader.write(self.response.read())
-        self.loader.close()
-
         Notify.init("image")
         self.n = Notify.Notification.new("%s just went LIVE!" % stream["name"],
           stream["status"],
           "",
         )
 
-        self.n.set_icon_from_pixbuf(self.loader.get_pixbuf())
+        self.n.set_icon_from_pixbuf(stream['pixbuf'].get_pixbuf())
         self.n.show()
     except IOError:
       return
